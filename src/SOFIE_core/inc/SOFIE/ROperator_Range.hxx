@@ -8,7 +8,6 @@
 #include <sstream>
 #include <algorithm>
 
-
 namespace SOFIE{
 
 template <typename T>
@@ -89,9 +88,9 @@ public:
          model.AddDynamicTensor(fNOutput, type, fShape);
       }
       if (model.Verbose()) {
-         std::cout << "Range -> output is " << fNOutput << " ";
-         if (fIsOutputConstant) std::cout << ConvertDynamicShapeToString(fShape) << std::endl;
-         else std::cout << ConvertDynamicShapeToString(model.GetDynamicTensorShape(fNOutput)) << std::endl;
+         std::cout << "Range -> output is " << fNOutput << " : " << ConvertShapeToString(fShape);
+         if (fIsOutputConstant) std::cout << " : " << ConvertValuesToString(model.GetTensorData<T>(fNOutput));
+         std::cout << std::endl;
       }
    }
 
@@ -121,5 +120,5 @@ public:
 };
 
 }//SOFIE
-
+   
 #endif //SOFIE_ROPERATOR_RANGE

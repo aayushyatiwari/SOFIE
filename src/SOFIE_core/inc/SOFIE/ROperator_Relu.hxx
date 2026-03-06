@@ -24,6 +24,7 @@ public:
    ROperator_Relu(){}
    ROperator_Relu(std::string nameX, std::string nameY):
       fNX(UTILITY::Clean_name(nameX)), fNY(UTILITY::Clean_name(nameY)){
+         fKind = OperatorKind::RELU;
          fInputTensorNames = { fNX };
          fOutputTensorNames = { fNY };
       }
@@ -42,11 +43,11 @@ public:
          throw std::runtime_error("TMVA SOFIE Relu Op Input Tensor " + fNX + " is not found in model");
       }
 
-      fShape = model.GetDynamicTensorShape(fNX);
+      fShape = model.GetDimTensorShape(fNX);
 
       model.AddIntermediateTensor(fNY, model.GetTensorType(fNX), fShape);
       if (model.Verbose()) {
-         std::cout << "Relu : " << fNX << " -> " << fNY << " " << ConvertDynamicShapeToString(fShape) << std::endl;
+         std::cout << "Relu : " << fNX << " -> " << fNY << " " << ConvertDimShapeToString(fShape) << std::endl;
       }
    }
 
@@ -65,6 +66,48 @@ public:
       return out.str();
    }
 
+   std::string Generate_GPU_Kernel_ALPAKA() {
+      std::string op;
+      op = "\n//------ RELU_KERNEL_ALPAKA\n";
+      op += SP + "struct ReluKernel{\n";
+      op += SP + SP + "template<typename TAcc, typename T>\n";
+      op += SP + SP + "ALPAKA_FN_ACC void operator()(TAcc const & acc, T* data, std::size_t numElements) const {\n";
+      op += SP + SP + SP + "for (auto i : alpaka::uniformElements(acc, numElements)) {\n";
+      op += SP + SP + SP + "data[i] = (data[i] < 0) ? 0 : data[i];\n";
+      op += SP + SP + "}\n";
+      op += SP + "}\n};\n";
+      return op;
+   }
+
+   std::string Generate_GPU_Kernel_Definitions_ALPAKA(std::string /*opName*/) override {
+      return SP + "ReluKernel reluKernel;\n";
+   }
+
+   std::string Generate_GPU_ALPAKA(std::string OpName) override {
+      OpName = "op_" + OpName;
+      if (fShape.empty()) {
+         throw std::runtime_error("TMVA SOFIE Operator Relu called to Generate without being initialized first");
+      }
+      std::stringstream out;
+      auto length = ConvertDynamicShapeToLength(fShape);
+      out << "\n//------ RELU_GPU_ALPAKA\n";
+      out << SP << "alpaka::WorkDivMembers<Dim, Idx> workDiv_"<<fNX<<"(alpaka::Vec<Dim, Idx>::all("<<(stoi(length)+256-1)/256<<"), alpaka::Vec<Dim, Idx>::all(256), alpaka::Vec<Dim, Idx>::all(1));\n";
+      out << SP << "alpaka::exec<Acc>(queue, workDiv_" << fNX << ", reluKernel, alpaka::getPtrNative(deviceBuf_" << fNX << "), static_cast<Idx>(" << length << ")); \n";
+      return out.str();
+   }
+
+   std::string GetFusableOutputTensorName() override {
+         return fNY;
+   }
+
+   void UpdateFusableTensorName(std::string fusable_tensor_name, const std::function<void(const std::string&)>& removal_func){
+      removal_func(fNX);
+      removal_func(fNY);
+      fNX = fusable_tensor_name;
+      fNY = fusable_tensor_name;
+      fInputTensorNames[0] =  fNX;
+      fOutputTensorNames[0] = fNY;
+   }
 };
 
 }//SOFIE

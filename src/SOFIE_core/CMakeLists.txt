@@ -76,6 +76,7 @@ list(TRANSFORM sources_headers PREPEND "inc/")
 set(sources_cxx
     src/RModel_Base.cxx
     src/RModel.cxx
+    src/RModel_ALPAKA.cxx
     src/RModel_GNN.cxx
     src/RModel_GraphIndependent.cxx
     src/RFunction.cxx
@@ -87,17 +88,23 @@ set(sources_cxx
 
 target_sources(SOFIE_core PRIVATE ${sources_headers} ${sources_cxx})
 target_include_directories(SOFIE_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/inc)
+target_link_libraries(SOFIE_core PUBLIC utils)
 target_link_libraries(SOFIE_core PUBLIC
     Tree
     Core
     RIO
 )
 
-ROOT_GENERATE_DICTIONARY(G__SOFIE ${sources_headers}
+ROOT_GENERATE_DICTIONARY(G__SOFIE_core ${sources_headers}
     LINKDEF inc/LinkDef.h
     MODULE SOFIE_core
     OPTIONS --deep
 )
+
+# Install the dictionaries.
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/libSOFIE_core_rdict.pcm
+              ${CMAKE_CURRENT_BINARY_DIR}/libSOFIE_core.rootmap
+        DESTINATION lib)
 
 install(TARGETS SOFIE_core
         LIBRARY DESTINATION lib

@@ -812,7 +812,7 @@ TEST(ONNX, LinearWithLeakyRelu)
 {
    constexpr float TOLERANCE = 1;
 
-   // Preparing the standard all-ones input
+   // Preparing input
    std::vector<float> input({
       0.4369, -0.6882,  1.0309, -1.0263, -0.1519,  1.2237, -0.7054, -0.1762,
       -0.6811, -2.2597,  1.0388, -0.7993,  0.1468,  1.3257, -0.4714, -0.0958,
@@ -2515,7 +2515,7 @@ TEST(ONNX, Equal){
    });
 
    SOFIE_Equal::Session s("Equal_FromONNX.dat");
-   std::vector<bool> output = s.infer(input1.data(),input2.data());
+   std::vector<std::uint8_t> output = s.infer(input1.data(),input2.data());
    // Checking output size
    EXPECT_EQ(output.size(), sizeof(Equal_ExpectedOutput::outputs) / sizeof(bool));
 
@@ -2540,7 +2540,7 @@ TEST(ONNX, LessOrEqual){
    });
 
    SOFIE_LessOrEqual::Session s("LessOrEqual_FromONNX.dat");
-   std::vector<bool> output = s.infer(input1.data(),input2.data());
+   std::vector<std::uint8_t> output = s.infer(input1.data(),input2.data());
    // Checking output size
    EXPECT_EQ(output.size(), sizeof(LessOrEqual_ExpectedOutput::outputs) / sizeof(bool));
 
@@ -2565,7 +2565,7 @@ TEST(ONNX, GreaterOrEqual){
    });
 
    SOFIE_GreaterOrEqual::Session s("GreaterOrEqual_FromONNX.dat");
-   std::vector<bool> output = s.infer(input1.data(),input2.data());
+   std::vector<std::uint8_t> output = s.infer(input1.data(),input2.data());
    // Checking output size
    EXPECT_EQ(output.size(), sizeof(GreaterOrEqual_ExpectedOutput::outputs) / sizeof(bool));
 
@@ -2590,7 +2590,7 @@ TEST(ONNX, Greater){
    });
 
    SOFIE_Greater::Session s("Greater_FromONNX.dat");
-   std::vector<bool> output = s.infer(input1.data(),input2.data());
+   std::vector<std::uint8_t> output = s.infer(input1.data(),input2.data());
    // Checking output size
    EXPECT_EQ(output.size(), sizeof(Greater_ExpectedOutput::outputs) / sizeof(bool));
 
@@ -2615,7 +2615,7 @@ TEST(ONNX, Less){
    });
 
    SOFIE_Less::Session s("Less_FromONNX.dat");
-   std::vector<bool> output = s.infer(input1.data(),input2.data());
+   std::vector<std::uint8_t> output = s.infer(input1.data(),input2.data());
    // Checking output size
    EXPECT_EQ(output.size(), sizeof(Less_ExpectedOutput::outputs) / sizeof(bool));
 

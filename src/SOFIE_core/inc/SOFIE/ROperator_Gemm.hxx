@@ -48,6 +48,8 @@ namespace SOFIE{
          fAttrAlpha(alpha), fAttrBeta(beta), fAttrTransA(transA), fAttrTransB(transB), fNA(UTILITY::Clean_name(nameA)),
          fNB(UTILITY::Clean_name(nameB)), fNY(UTILITY::Clean_name(nameY))
       {
+
+         fKind = OperatorKind::GEMM;
          fActivation = activation;
          fType = "float";
          static_assert(std::is_same_v<T, float>,
@@ -60,9 +62,11 @@ namespace SOFIE{
          fAttrAlpha(alpha), fAttrBeta(beta), fAttrTransA(transA), fAttrTransB(transB), fNA(UTILITY::Clean_name(nameA)),
          fNB(UTILITY::Clean_name(nameB)), fNC(UTILITY::Clean_name(nameC)), fNY(UTILITY::Clean_name(nameY)), fActivation(activation)
       {
+         fKind = OperatorKind::GEMM;
          fActivation = activation;
          fType = "float";
 
+         fInputTensorNames = { fNA, fNB, fNC };
          fOutputTensorNames = { fNY };
       }
 
@@ -148,7 +152,7 @@ namespace SOFIE{
             }
          }
          if (model.IsDynamicTensor(fNA) || model.IsDimInputTensor(fNA) ) {
-            fShapeA = model.GetDynamicTensorShape(fNA);
+            fShapeA = model.GetDimTensorShape(fNA);
             fIsDynamic = true;
          } else {
             auto shapeA_int = model.GetTensorShape(fNA);
@@ -162,7 +166,7 @@ namespace SOFIE{
          }
 
          if (model.IsDynamicTensor(fNB) || model.IsDimInputTensor(fNB)) {
-            fShapeB = model.GetDynamicTensorShape(fNB);
+            fShapeB = model.GetDimTensorShape(fNB);
             fIsDynamic = true;
          }
          else {
@@ -191,7 +195,7 @@ namespace SOFIE{
          if (!fIsDynamic) {
             shapeY = ConvertShapeToInt(fShapeY);
             if (shapeY.empty()) {
-               throw std::runtime_error("TMVA SOFIE Gemm Op " + fNY + " has invalid shape" + ConvertDynamicShapeToString(fShapeY));
+               throw std::runtime_error("TMVA SOFIE Gemm Op " + fNY + " has invalid shape" + ConvertDimShapeToString(fShapeY));
             }
          }
 
@@ -252,15 +256,16 @@ namespace SOFIE{
                shapeY.erase(shapeY.end()-1);
          }
 
-         if (!fIsDynamic)
+         if (!fIsDynamic){
             model.AddIntermediateTensor(fNY, model.GetTensorType(fNA), shapeY);
+         }
          else
             model.AddDynamicTensor(fNY, model.GetTensorType(fNA), fShapeY);
 
          if (model.Verbose()){
             std::cout << "Gemm (or MatMul) " << " ---> " << fNY << " shape ";
             if (fIsDynamic)
-               std::cout << ConvertDynamicShapeToString(fShapeY) << std::endl;
+               std::cout << ConvertDimShapeToString(fShapeY) << std::endl;
             else
                std::cout << ConvertShapeToString(shapeY) << std::endl;
          }
@@ -279,11 +284,32 @@ namespace SOFIE{
             // include a separate scope to avoid defining unique operator temp variables
             out << "//--- broadcast bias tensor " << fNC << "for Gemm op\n";
             out << SP << "{\n";
-            out << "      float * data = SOFIE::UTILITY::UnidirectionalBroadcast<float>(tensor_"
-               << fNC << "," << ConvertShapeToString(fShapeC) << ", " << ConvertDynamicShapeToString(fShapeY) << ");\n";
-            auto length = SOFIE::ConvertDynamicShapeToLength(fShapeY); // output size
+            out << "      float * data =  SOFIE::UTILITY::UnidirectionalBroadcast<float>(tensor_"
+               << fNC << "," << ConvertShapeToString(fShapeC) << ", " << ConvertDimShapeToString(fShapeY) << ");\n";
+            auto length = SOFIE::ConvertDimShapeToLength(fShapeY); // output size
             out << SP << SP << "std::copy(data, data + " << length << ", tensor_" << fNC2 << ");\n";
             out << SP << SP << "delete [] data;\n";
+            out << SP << "}\n";
+         }
+         return out.str();
+      }
+
+      std::string GenerateInitCode_GPU_ALPAKA() override {
+         std::stringstream out;
+         // generate initialization code for broadcasting of bias tensor
+         if (fShapeC.size() != fShapeY.size() && fNC != fNC2) {
+            // we broadcast here always C in Y output, so target shape is the one of Y
+            // no need to call UTILITY::UnidirectionalBroadcastShape.
+            // here in case of parametric shape we need to assume that the parameters will be defined in the initialization code.
+            auto targetShape = fShapeY;
+            // include a separate scope to avoid defining unique operator temp variables
+            auto length = SOFIE::ConvertDimShapeToLength(fShapeY); // output size
+            out << "//--- broadcast bias tensor " << fNC << "for Gemm op\n";
+            out << SP << "{\n";
+            out << "      std::vector<float> data(" << length  << ");\n";
+            out << "      SOFIE::UTILITY::UnidirectionalBroadcast<float>(tensor_" << fNC << ".data()," << ConvertShapeToString(fShapeC) << ", " << ConvertDimShapeToString(fShapeY) << ", " << "std::span<float>(data));\n";
+            out << SP << SP << "auto hostBuf_"<< fNC2 << " = alpaka::createView(hostAcc, data);\n";
+            out << SP << SP << "alpaka::memcpy(queue, deviceBuf_"<< fNC2 << ", hostBuf_"<< fNC2 << ");\n";
             out << SP << "}\n";
          }
          return out.str();
@@ -389,8 +415,108 @@ namespace SOFIE{
          return out.str();
       }
 
-      std::vector<std::string> GetBlasRoutines() override { return { std::string("Gemm"), std::string("Gemv") }; }
+      std::string Generate_GPU_ALPAKA(std::string opName) override {
+         opName = "op_" + opName;
 
+         if (fShapeA.empty() || fShapeB.empty() || fShapeY.empty() || (fNC != "" && fShapeC.empty())) {
+            throw std::runtime_error("TMVA SOFIE Gemm Op called to Generate without being initialized first");
+         }
+         std::stringstream out;
+         out << "\n//--------- Gemm_GPU_ALPAKA\n";
+         out << SP << "char " << opName << "_transA = " << (fAttrTransA ? "\'t\'" : "\'n\'") << ";\n";
+         out << SP << "char " << opName << "_transB = " << (fAttrTransB ? "\'t\'" : "\'n\'") << ";\n";
+         // need to consider case A and B have dim > 2 (for MatMul)
+         int64_t dimA = fShapeA.size();
+         int64_t dimB = fShapeB.size();
+         int64_t dimY = fShapeY.size();
+         if (dimA != dimB || dimA != dimY) {
+             throw std::runtime_error("TMVA SOFIE Gemm(MatMul) has invalid shape for inputs or output");
+         }
+         auto m = (fAttrTransA ? fShapeA[dimA-1].GetVal() : fShapeA[dimA-2].GetVal());
+         auto n = (fAttrTransB ? fShapeB[dimB-2].GetVal() : fShapeB[dimB-1].GetVal());
+         auto k = (fAttrTransA ? fShapeA[dimA-2].GetVal() : fShapeA[dimA-1].GetVal());
+         std::vector<Dim> sY = {fShapeY[dimY-2], fShapeY[dimY-1]};
+         // extra dimensions in case of stacked MatMul
+         std::vector<Dim> sA;
+         for (int64_t i = 0; i < dimY-2; i++) {
+            sA.push_back(fShapeY[i]);
+         }
+         auto lengthGemm = ConvertDynamicShapeToLength(sY); // size of the Gemm operation
+         auto lengthExtra = ConvertDynamicShapeToLength(sA); // extra length in case input tensors are of dim>2 (MatMul)
+
+         out << SP << "int " << opName << "_m = " << m << ";\n";
+         out << SP << "int " << opName << "_n = " << n << ";\n";
+         out << SP << "int " << opName << "_k = " << k << ";\n";
+         out << SP << "float " << opName << "_alpha = " << std::setprecision(std::numeric_limits<float>::max_digits10) << fAttrAlpha << ";\n";
+         
+         // restricting to a 0 beta since BIAS is configured separately through sofieBLAS interface
+         out << SP << "float " << opName << "_beta = 0;\n";
+
+         // case bias is present
+         if (!fNC.empty()){
+            if (fNC2 == fNC) {
+               // add a check in case broadcasting was not needed or done outside of session
+               // C should have smaller dimension of Y
+               if (!fIsDynamic) {
+                  if (std::stoi(lengthGemm) != static_cast<int>(ConvertShapeToLength(fShapeC)))
+                     throw std::runtime_error("TMVA SOFIE Gemm Op " + opName + " Bias tensor has not correct size "
+                            + ConvertShapeToString(fShapeC) + " output length " + lengthGemm);
+               } else {
+                  // add a dynamic check (C should not be a dynamic tensor)
+                  out << SP << "assert(" << lengthGemm << " != " <<  ConvertShapeToLength(fShapeC) << ");\n";
+               }
+            }
+         } else {
+            //in this case fAttrBeta needs to be equal to zero otherwise second time we run we will use
+            // the previous result
+            if (fAttrBeta != 0) {
+               throw std::runtime_error("TMVA SOFIE Gemm Op " + opName + " Bias tensor is not present but beta value in Gemm is not zero");
+            }
+         }
+
+         // include MatMul case where we stack the Gemm operations
+         // exclude case where we have only 1's in the additional dims
+         bool doStackMul = dimY > 2 && ( fIsDynamic  || std::stoi(lengthExtra) > 1);
+         if (doStackMul) {
+            out << SP << "size_t " << opName << "_yoffset = 0;\n"; // needed if we stack the gemm operations
+            out << SP << "for (int i = 0; i < " << lengthExtra << "; i++){\n";
+            out << SP;
+         }
+         // in the case of bias
+         if (!fNC.empty()){
+            if (fActivation == EActivationType::RELU){
+               out << SP << "blas.gemmrelu("<<opName<<"_transB, "<<opName<<"_transA, "<<opName<<"_n, "<<opName<<"_m, "<<opName<<"_k, "<< opName << "_alpha, deviceBuf_"<<fNB<<",  "<<"deviceBuf_"<<fNA<<", "<<opName << "_beta, deviceBuf_"<<fNC2<<", deviceBuf_"<<fNY<<");\n";
+            } else {
+               out << SP << "blas.gemm("<<opName<<"_transB, "<<opName<<"_transA, "<<opName<<"_n, "<<opName<<"_m, "<<opName<<"_k, "<< opName << "_alpha, deviceBuf_"<<fNB<<",  "<<"deviceBuf_"<<fNA<<", "<<opName << "_beta, deviceBuf_"<<fNC2<<", deviceBuf_"<<fNY<<");\n";
+            }
+         }
+         // need to implement for matmul case without bias
+
+         return out.str();
+      }
+
+      std::vector<std::string> GetBlasRoutines() override { return { std::string("Gemm"), std::string("Gemv") }; }
+      std::string GetFusableOutputTensorName() override {
+         return fNY;
+      }
+
+      void UpdateFusableTensorName(std::string fusable_tensor_name, const std::function<void(const std::string&)>& removal_func){
+         removal_func(fNY);
+         fNY = fusable_tensor_name;
+         fOutputTensorNames[0] = fNY;
+      }
+
+      std::string GetBlasConfig(){
+         int64_t dimA = fShapeA.size();
+         int64_t dimB = fShapeB.size();
+         auto m = (fAttrTransA ? fShapeA[dimA-1].GetVal() : fShapeA[dimA-2].GetVal());
+         auto n = (fAttrTransB ? fShapeB[dimB-2].GetVal() : fShapeB[dimB-1].GetVal());
+         auto k = (fAttrTransA ? fShapeA[dimA-2].GetVal() : fShapeA[dimA-1].GetVal());
+         auto lda = (fAttrTransA ? m : k);
+         auto ldb = (fAttrTransB ? k : n);
+         auto ldc = n;
+         return n+", "+m+", "+k+", "+ldb+", "+lda+", "+ldc;
+      }
    };
 
 
