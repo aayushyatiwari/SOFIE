@@ -140,7 +140,7 @@ if (ENABLE_ALPAKA_TESTS)
       TestCustomModelsFromONNXForAlpakaCuda
       PROPERTIES
         CUDA_SEPARABLE_COMPILATION OFF
-        CUDA_ARCHITECTURES 70 80 86 
+        CUDA_ARCHITECTURES 89 80 86 
     )
 
     target_compile_definitions(

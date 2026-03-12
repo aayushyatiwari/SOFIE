@@ -52,6 +52,7 @@ extern ParserFuncSignature ParseConstant;
 extern ParserFuncSignature ParseTranspose;
 extern ParserFuncSignature ParseRelu;
 extern ParserFuncSignature ParseTanh;
+extern ParserFuncSignature ParseSoftplus;
 extern ParserFuncSignature ParseConv;
 extern ParserFuncSignature ParseConvTranspose;
 extern ParserFuncSignature ParseLeakyRelu;
@@ -212,6 +213,7 @@ RModelParser_ONNX::RModelParser_ONNX() noexcept : fOperatorsMapImpl(std::make_un
    RegisterOperator("Slice", ParseSlice);
    RegisterOperator("Softmax", ParseSoftmax);
    RegisterOperator("Tanh", ParseTanh);
+   RegisterOperator("Softplus", ParseSoftplus);
    RegisterOperator("Transpose", ParseTranspose);
    RegisterOperator("MatMul", ParseMatMul);
    RegisterOperator("LayerNormalization", ParseLayerNormalization);

@@ -1,5 +1,5 @@
-#ifndef SOFIE_ROPERATOR_Tanh
-#define SOFIE_ROPERATOR_Tanh
+#ifndef SOFIE_ROPERATOR_Softplus
+#define SOFIE_ROPERATOR_Softplus
 
 #include "SOFIE/SOFIE_common.hxx"
 #include "SOFIE/ROperator.hxx"
@@ -11,7 +11,7 @@
 namespace SOFIE{
 
 template <typename T>
-class ROperator_Tanh final : public ROperator
+class ROperator_Softplus final : public ROperator
 {
 
 private:
@@ -21,8 +21,8 @@ private:
    std::vector<size_t> fShape;
 
 public:
-   ROperator_Tanh(){}
-   ROperator_Tanh(std::string nameX, std::string nameY):
+   ROperator_Softplus(){}
+   ROperator_Softplus(std::string nameX, std::string nameY):
       fNX(UTILITY::Clean_name(nameX)), fNY(UTILITY::Clean_name(nameY)){
          fInputTensorNames = { fNX };
          fOutputTensorNames = { fNY };
@@ -40,7 +40,7 @@ public:
    void Initialize(RModel& model) override {
        //input must be a graph input, or already initialized intermediate tensor
       if (model.CheckIfTensorAlreadyExist(fNX) == false){
-        throw std::runtime_error("TMVA SOFIE Tanh Op Input Tensor is not found in model");
+        throw std::runtime_error("TMVA SOFIE Softplus Op Input Tensor is not found in model");
       }
       fShape = model.GetTensorShape(fNX);
       model.AddIntermediateTensor(fNY, model.GetTensorType(fNX), fShape);
@@ -51,26 +51,26 @@ public:
    std::string Generate(std::string OpName) override {
       OpName = "op_" + OpName;
       if (fShape.empty()) {
-         throw std::runtime_error("TMVA SOFIE Tanh operator called to Generate without being initialized first");
+         throw std::runtime_error("TMVA SOFIE Softplus operator called to Generate without being initialized first");
       }
       std::stringstream out;
       size_t length = ConvertShapeToLength(fShape);
-      out << "\n//------ TANH\n";
+      out << "\n//------ Softplus\n";
       out << SP << "for (int id = 0; id < " << length << " ; id++){\n";
-      out << SP << SP << "tensor_" << fNY << "[id] = std::tanh(tensor_" << fNX << "[id]);\n";
+      out << SP << SP << "tensor_" << fNY << "[id] = std::log(tensor_" << fNX << "[id] + 1);\n";
       out << SP << "}\n";
       return out.str();
    }
 
    std::string Generate_GPU_Kernel_ALPAKA(std::string /*opName*/) override {
       std::string op;
-      op = "\n//------ TANH_KERNEL_ALPAKA\n";
-      op += "struct TanhKernel {\n";
+      op = "\n//------ SOFTPLUS_KERNEL_ALPAKA\n";
+      op += "struct SoftplusKernel {\n";
       op += SP + "template<typename TAcc, typename T>\n";
       op += SP + "ALPAKA_FN_ACC void operator()(TAcc const & acc, T const* __restrict__ data, T* __restrict__ out, std::size_t numElements) const {\n";
       op += SP + SP + SP + "auto idx = alpaka::getIdx<alpaka::Grid, alpaka::Threads>(acc)[0];\n";
       op += SP + SP + SP + "if (idx < numElements) {\n";
-      op += SP + SP + SP + "out[idx] = std::tanh(data[idx]);\n";
+      op += SP + SP + SP + "out[idx] = std::log(T(1) + std::exp(data[idx]));\n";
       op += SP + SP + "}\n";
       op += SP + "}\n";
       op += "};\n";
@@ -78,24 +78,24 @@ public:
    }
 
    std::string Generate_GPU_Kernel_Definitions_ALPAKA(std::string /*opName*/) override {
-      return "TanhKernel tanhKernel;\n";
+      return "SoftplusKernel softPlusKernel;\n";
    }
 
     std::string Generate_GPU_ALPAKA(std::string OpName) override {
       OpName = "op_" + OpName;
       if (fShape.empty()) {
-         throw std::runtime_error("TMVA SOFIE Operator Tanh called to Generate without being initialized first");
+         throw std::runtime_error("TMVA SOFIE Operator Softplus called to Generate without being initialized first");
       }
       std::stringstream out;
       auto length = ConvertShapeToLength(fShape);
-      out << "\n//------ TANH_GPU_ALPAKA\n";
+      out << "\n//------ SOFTPLUS_GPU_ALPAKA\n";
       out << SP << "auto const elementsPerThread_"<<fNX<<" = Vec::all(static_cast<Idx>(1));\n";
       out << SP << "auto const elementsPerGrid_"<<fNX<<" = Vec::all(Idx{"<< length << "});\n";
       out << SP << "alpaka::KernelCfg<Acc> const kernelCfg_" << fNX << " = {elementsPerGrid_" << fNX << ", elementsPerThread_" << fNX << "};\n";
-      out << SP << "auto const workDiv_" << fNX << " = alpaka::getValidWorkDiv(kernelCfg_" << fNX << ", devAcc, tanhKernel, alpaka::getPtrNative(deviceBuf_" << fNX
+      out << SP << "auto const workDiv_" << fNX << " = alpaka::getValidWorkDiv(kernelCfg_" << fNX << ", devAcc, softPlusKernel, alpaka::getPtrNative(deviceBuf_" << fNX
          << "), alpaka::getPtrNative(deviceBuf_" << fNY << "), static_cast<Idx>(" << length << "));\n";
       out << SP << "alpaka::exec<Acc>(queue, workDiv_" << fNX
-         << ", tanhKernel, alpaka::getPtrNative(deviceBuf_" << fNX
+         << ", softPlusKernel, alpaka::getPtrNative(deviceBuf_" << fNX
          << "), alpaka::getPtrNative(deviceBuf_" << fNY << "), static_cast<Idx>(" << length << "));\n";
       return out.str();
    }
@@ -105,4 +105,5 @@ public:
 }//SOFIE
 
 
-#endif //SOFIE_ROPERATOR_Tanh
+#endif //SOFIE_ROPERATOR_Softplus
+

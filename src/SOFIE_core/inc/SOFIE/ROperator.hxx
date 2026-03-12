@@ -20,7 +20,10 @@ enum class OperatorKind {
    CONSTANTOFSHAPE = 4,
    UNDEFINED = 5,
    CONV=6,
-   BATCHNORM=7
+   BATCHNORM=7,
+   ELU=8,
+   TANH=9,
+   SOFTPLUS=10
 };
 
 inline const char* toString(OperatorKind kind) {
@@ -33,6 +36,9 @@ inline const char* toString(OperatorKind kind) {
        case OperatorKind::BATCHNORM:       return "BATCHNORM";  
        case OperatorKind::CONV:       return "CONV";
        case OperatorKind::UNDEFINED:  return "UNDEFINED";
+       case OperatorKind::ELU:        return "ELU";
+       case OperatorKind::TANH:       return "TANH";
+       case OperatorKind::SOFTPLUS:       return "SOFTPLUS";
        default:                       return "UNKNOWN";
    }
 }
