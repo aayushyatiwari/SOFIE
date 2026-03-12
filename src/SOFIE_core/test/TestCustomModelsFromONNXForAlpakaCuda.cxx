@@ -27,6 +27,17 @@
 #include "Softplus_FromONNX_GPU_ALPAKA.hxx"
 #include "input_models/references/Softplus.ref.hxx"
 
+#include "Selu_FromONNX_GPU_ALPAKA.hxx"
+#include "input_models/references/Selu.ref.hxx"
+
+#include "Erf_FromONNX_GPU_ALPAKA.hxx"
+#include "input_models/references/Erf.ref.hxx"
+
+#include "Identity_FromONNX_GPU_ALPAKA.hxx"
+
+#include "Swish_FromONNX_GPU_ALPAKA.hxx"
+#include "input_models/references/Swish.ref.hxx"
+
 #include <alpaka/alpaka.hpp>
 #include <cuda_runtime.h>
 #include <nvml.h>
@@ -499,3 +510,138 @@ TEST_F(SofieAlpakaTest, Softplus)
    }
 }
 
+TEST_F(SofieAlpakaTest, Selu)
+{
+   constexpr float TOLERANCE = DEFAULT_TOLERANCE;
+
+    float inputs[] = {-1.0f, -0.5f, 0.0f, 0.5f, 1.0f, 2.0f};
+    int input_size = sizeof(inputs)/sizeof(inputs[0]);
+   auto A = alpaka::allocBuf<float, Idx>(host, Ext1D::all(Idx{input_size}));
+   float *A_ptr = reinterpret_cast<float*>(alpaka::getPtrNative(A));
+   for (Idx i = 0; i < input_size;++i) {
+      A_ptr[i] = inputs[i];
+   }
+
+   auto A_d = alpaka::allocBuf<float, Idx>(device, Ext1D::all(Idx{input_size}));
+   alpaka::memcpy(queue, A_d, A);
+   alpaka::wait(queue);
+
+   auto result_h = alpaka::allocBuf<float, Idx>(host, Ext1D::all(Idx{6})); // 6 outputs 
+
+   {
+      SOFIE_Selu::Session<alpaka::TagGpuCudaRt> session;
+      auto result = session.infer(A_d);
+      alpaka::wait(queue);
+      cudaDeviceSynchronize();
+      alpaka::memcpy(queue, result_h, result);
+      alpaka::wait(queue);
+   }
+
+   float* res_ptr = reinterpret_cast<float*>(alpaka::getPtrNative(result_h));
+   float *correct = Selu_ExpectedOutput::outputs;
+   for (size_t i = 0; i < 6; ++i) {
+      EXPECT_LE(std::abs(res_ptr[i] - correct[i]), TOLERANCE);
+   }
+}
+
+TEST_F(SofieAlpakaTest, Erf)
+{
+   constexpr float TOLERANCE = DEFAULT_TOLERANCE;
+
+    float inputs[] = {-1.0f, 0.2f, 1.0f, -0.6f, 0.7f, -2.5f, 0.18f, 0.7f, 1.5f, -1.6f, 0.44f, -0.9f};
+    int input_size = sizeof(inputs)/sizeof(inputs[0]);
+   auto A = alpaka::allocBuf<float, Idx>(host, Ext1D::all(Idx{input_size}));
+   float *A_ptr = reinterpret_cast<float*>(alpaka::getPtrNative(A));
+   for (Idx i = 0; i < input_size;++i) {
+      A_ptr[i] = inputs[i];
+   }
+
+   auto A_d = alpaka::allocBuf<float, Idx>(device, Ext1D::all(Idx{input_size}));
+   alpaka::memcpy(queue, A_d, A);
+   alpaka::wait(queue);
+
+   auto result_h = alpaka::allocBuf<float, Idx>(host, Ext1D::all(Idx{12})); // 12 outputs 
+
+   {
+      SOFIE_Erf::Session<alpaka::TagGpuCudaRt> session;
+      auto result = session.infer(A_d);
+      alpaka::wait(queue);
+      cudaDeviceSynchronize();
+      alpaka::memcpy(queue, result_h, result);
+      alpaka::wait(queue);
+   }
+
+   float* res_ptr = reinterpret_cast<float*>(alpaka::getPtrNative(result_h));
+   float *correct = Erf_ExpectedOutput::outputs;
+   for (size_t i = 0; i < 12; ++i) {
+      EXPECT_LE(std::abs(res_ptr[i] - correct[i]), TOLERANCE);
+   }
+}
+
+TEST_F(SofieAlpakaTest, Identity)
+{
+   constexpr float TOLERANCE = DEFAULT_TOLERANCE;
+
+    float inputs[] = {-1.0f, 0.2f, 1.0f, -0.6f, 0.7f, -2.5f};
+    int input_size = sizeof(inputs)/sizeof(inputs[0]);
+   auto A = alpaka::allocBuf<float, Idx>(host, Ext1D::all(Idx{input_size}));
+   float *A_ptr = reinterpret_cast<float*>(alpaka::getPtrNative(A));
+   for (Idx i = 0; i < input_size;++i) {
+      A_ptr[i] = inputs[i];
+   }
+
+   auto A_d = alpaka::allocBuf<float, Idx>(device, Ext1D::all(Idx{input_size}));
+   alpaka::memcpy(queue, A_d, A);
+   alpaka::wait(queue);
+
+   auto result_h = alpaka::allocBuf<float, Idx>(host, Ext1D::all(Idx{6})); // 6 outputs 
+
+   {
+      SOFIE_Identity::Session<alpaka::TagGpuCudaRt> session;
+      auto result = session.infer(A_d);
+      alpaka::wait(queue);
+      cudaDeviceSynchronize();
+      alpaka::memcpy(queue, result_h, result);
+      alpaka::wait(queue);
+   }
+
+   float* res_ptr = reinterpret_cast<float*>(alpaka::getPtrNative(result_h));
+   float *correct = inputs;
+   for (size_t i = 0; i < 6; ++i) {
+      EXPECT_LE(std::abs(res_ptr[i] - correct[i]), TOLERANCE);
+   }
+}
+
+TEST_F(SofieAlpakaTest, Swish)
+{
+   constexpr float TOLERANCE = DEFAULT_TOLERANCE;
+
+    float inputs[] = {-1.0f, 0.2f, 1.0f, -0.6f, 0.7f, -2.5f};
+    int input_size = sizeof(inputs)/sizeof(inputs[0]);
+   auto A = alpaka::allocBuf<float, Idx>(host, Ext1D::all(Idx{input_size}));
+   float *A_ptr = reinterpret_cast<float*>(alpaka::getPtrNative(A));
+   for (Idx i = 0; i < input_size;++i) {
+      A_ptr[i] = inputs[i];
+   }
+
+   auto A_d = alpaka::allocBuf<float, Idx>(device, Ext1D::all(Idx{input_size}));
+   alpaka::memcpy(queue, A_d, A);
+   alpaka::wait(queue);
+
+   auto result_h = alpaka::allocBuf<float, Idx>(host, Ext1D::all(Idx{6})); // 12 outputs 
+
+   {
+      SOFIE_Swish::Session<alpaka::TagGpuCudaRt> session;
+      auto result = session.infer(A_d);
+      alpaka::wait(queue);
+      cudaDeviceSynchronize();
+      alpaka::memcpy(queue, result_h, result);
+      alpaka::wait(queue);
+   }
+
+   float* res_ptr = reinterpret_cast<float*>(alpaka::getPtrNative(result_h));
+   float *correct = Swish_ExpectedOutput::outputs;
+   for (size_t i = 0; i < 6; ++i) {
+      EXPECT_LE(std::abs(res_ptr[i] - correct[i]), TOLERANCE);
+   }
+}

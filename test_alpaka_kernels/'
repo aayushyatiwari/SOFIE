@@ -1,0 +1,83 @@
+#include <alpaka/alpaka.hpp>
+#include <cmath>
+#include <iostream>
+#include <vector>
+
+using namespace alpaka;
+
+
+struct EluKernel
+{
+    template<typename TAcc>
+    ALPAKA_FN_ACC void operator()(
+        TAcc const& acc,
+        float const* input,
+        float* output,
+        float alpha,
+        std::size_t n) const
+    {
+        using Idx = alpaka::Idx<TAcc>;
+
+        auto const globalIdx = alpaka::getIdx<alpaka::Grid, alpaka::Threads>(acc)[0];
+
+        if(globalIdx < static_cast<Idx>(n))
+        {
+            float x = input[globalIdx];
+            output[globalIdx] = x >= 0.0f ? x : alpha * (alpaka::math::exp(acc, x) - 1.0f);
+        }
+    }
+};
+
+auto main() -> int
+{
+    using Dim = alpaka::DimInt<1u>;
+    using Idx = std::uint32_t;
+    using Acc = alpaka::TagGpuCudaRt<Dim, Idx>;  // swap to TagGpuCudaRt for CUDA
+
+    auto const platform = alpaka::Platform<Acc>{};
+    auto const device   = alpaka::getDevByIdx(platform, 0u);
+
+    using Queue = alpaka::Queue<Acc, alpaka::Blocking>;
+    auto queue = Queue{device};
+
+    constexpr std::size_t N = 8;
+    float const alpha = 1.0f;
+
+    std::vector<float> hostInput  = {-2.f, -1.f, -0.5f, 0.f, 0.5f, 1.f, 2.f, 3.f};
+    std::vector<float> hostOutput(N, 0.f);
+
+    auto devPlatform = alpaka::Platform<Acc>{};
+
+    auto bufIn  = alpaka::allocBuf<float, Idx>(device, static_cast<Idx>(N));
+    auto bufOut = alpaka::allocBuf<float, Idx>(device, static_cast<Idx>(N));
+
+    auto hostPlatform = alpaka::PlatformCpu{};
+    auto hostDev      = alpaka::getDevByIdx(hostPlatform, 0u);
+
+    auto hostViewIn = alpaka::createView(hostDev, hostInput.data(), static_cast<Idx>(N));
+    alpaka::memcpy(queue, bufIn, hostViewIn);
+
+    EluKernel kernel;
+    alpaka::KernelCfg<Acc> const cfg = {
+        alpaka::Vec<Dim, Idx>{static_cast<Idx>(N)},
+        alpaka::Vec<Dim, Idx>{static_cast<Idx>(1)}
+    };
+    auto const workDiv = alpaka::getValidWorkDiv(cfg, device, kernel,
+        alpaka::getPtrNative(bufIn), alpaka::getPtrNative(bufOut), alpha, N);
+
+    alpaka::exec<Acc>(queue, workDiv, kernel,
+        alpaka::getPtrNative(bufIn),
+        alpaka::getPtrNative(bufOut),
+        alpha,
+        N);
+
+    auto hostViewOut = alpaka::createView(hostDev, hostOutput.data(), static_cast<Idx>(N));
+    alpaka::memcpy(queue, hostViewOut, bufOut);
+    alpaka::wait(queue);
+
+    std::cout << "Input -> ELU output (alpha=" << alpha << "):\n";
+    for(std::size_t i = 0; i < N; ++i)
+        std::cout << "  " << hostInput[i] << " -> " << hostOutput[i] << "\n";
+
+    return 0;
+}

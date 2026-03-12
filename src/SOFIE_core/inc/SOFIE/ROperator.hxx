@@ -23,7 +23,10 @@ enum class OperatorKind {
    BATCHNORM=7,
    ELU=8,
    TANH=9,
-   SOFTPLUS=10
+   SOFTPLUS=10,
+   SELU=11,
+   ERF=12,
+   IDENTITY=13
 };
 
 inline const char* toString(OperatorKind kind) {
@@ -39,6 +42,9 @@ inline const char* toString(OperatorKind kind) {
        case OperatorKind::ELU:        return "ELU";
        case OperatorKind::TANH:       return "TANH";
        case OperatorKind::SOFTPLUS:       return "SOFTPLUS";
+       case OperatorKind::SELU:       return "SELU";
+       case OperatorKind::ERF:       return "ERF";
+       case OperatorKind::IDENTITY:       return "IDENTITY";
        default:                       return "UNKNOWN";
    }
 }
