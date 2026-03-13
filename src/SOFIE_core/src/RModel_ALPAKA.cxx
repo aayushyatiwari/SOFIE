@@ -61,15 +61,19 @@ void RModel::GenerateGPU_ALPAKA_Buffers() {
       std::string tensor_declaration_block = "";
 
       for (auto &i : fIntermediateTensorInfos) {
-         if (i.second.type == ETensorType::BOOL) {
-            tensor_declaration_block += "std::vector<bool> fTensor_" + i.first +
-                                        " = std::vector<bool>(" +
-                                        std::to_string(ConvertShapeToLength(i.second.shape)) +
-                                        ");\n";
-            // No pointer allocation needed for BOOL
-         }
 
          size_t length = ConvertShapeToLength(i.second.shape);
+         if (i.second.type == ETensorType::BOOL) {
+            tensor_declaration_block += "std::vector<uint8_t> fTensor_" + i.first +
+                                        " = std::vector<uint8_t>(" +
+                                        std::to_string(ConvertShapeToLength(i.second.shape)) +
+                                        ");\n";
+            // for "where" operator, we need BufUI81D for because inputs are bool
+            tensor_declaration_block += "BufUI81D deviceBuf_" + i.first +
+                                        " = alpaka::allocBuf<uint8_t, Idx>(devAcc, Ext1D::all(Idx{" +
+                                        std::to_string(length) + "}));\n";
+         }
+
 
          if (i.second.type == ETensorType::FLOAT) {
             tensor_declaration_block += "BufF1D deviceBuf_" + i.first +
@@ -133,6 +137,7 @@ std::string RModel::GenerateInferSignature_GPU_ALPAKA(bool isdecl) {
       if (type == ETensorType::FLOAT)  return "BufF1D";
       if (type == ETensorType::DOUBLE) return "BufD1D";
       if (type == ETensorType::INT64)  return "BufI641D";
+      if (type == ETensorType::BOOL)  return "BufUI81D";
       throw std::runtime_error("TMVA-SOFIE: input tensor " + name +
                                " is of a data type which is not yet supported.");
    };
@@ -243,6 +248,7 @@ void RModel::GenerateSessionCode_GPU_ALPAKA() {
     fGC += "using QueueAcc = alpaka::Queue<Acc, QueueProperty>;\n\n";
     fGC += "using BufF1D = alpaka::Buf<Acc, float, Dim, Idx>;\n";
     fGC += "using BufD1D = alpaka::Buf<Acc, double, Dim, Idx>;\n";
+    fGC += "using BufUI81D = alpaka::Buf<Acc, uint8_t, Dim, Idx>;\n\n";
     fGC += "using BufI641D = alpaka::Buf<Acc, int64_t, Dim, Idx>;\n\n";
 
     fGC += "\nalpaka::Platform<Acc> const platform{};\n";

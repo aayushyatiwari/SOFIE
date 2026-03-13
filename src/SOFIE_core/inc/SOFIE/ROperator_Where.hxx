@@ -287,6 +287,93 @@ public:
       return out.str();
    }
 
+    std::string Generate_GPU_Kernel_ALPAKA(std::string /*opName*/) override {
+        std::string op;
+        op = "\n//------ WHERE_KERNEL_ALPAKA\n";
+        op += "struct WhereKernel {\n";
+        op += SP + "template<typename TAcc, typename T>\n";
+        op += SP + "ALPAKA_FN_ACC void operator()(TAcc const & acc, std::uint8_t const* __restrict__ cond, T const* __restrict__ a, T const* __restrict__ b, T* __restrict__ out, std::size_t numElements) const {\n";
+        op += SP + SP + "const auto idx = alpaka::getIdx<alpaka::Grid, alpaka::Threads>(acc)[0];\n";
+        op += SP + SP + "if(idx < numElements) {\n";
+        op += SP + SP + SP + SP + "out[idx] = cond[idx] ? a[idx] : b[idx];\n";
+        op += SP + SP + SP + "}\n";
+        op += SP + SP + "}\n";
+        op += SP + "};\n";
+        return op;
+    }
+
+    std::string Generate_GPU_Kernel_Definitions_ALPAKA(std::string /*opName*/) override {
+        return SP + "WhereKernel whereKernel;\n";
+    }
+
+    std::string Generate_GPU_ALPAKA(std::string opName) override {
+        if (fShapeY.empty()) {
+            throw std::runtime_error("TMVA SOFIE Operator Where called to Generate without being initialized first");
+        }
+        if (fIsOutputConstant) return "";
+        opName = "op_" + opName;
+        std::stringstream out;
+        auto length = ConvertShapeToLength(fShapeY);
+        std::string typeName = TensorType<T>::Name();
+
+        if (fShapeA != fShapeY) {
+            size_t lenA = ConvertShapeToLength(fShapeA);
+            out << SP << "{\n";
+            out << SP << SP << "std::vector<" << typeName << "> srcVec_" << fNA << "(" << lenA << ");\n";
+            out << SP << SP << "alpaka::memcpy(queue, alpaka::createView(hostAcc, srcVec_" << fNA << "), deviceBuf_" << fNA << ");\n";
+            out << SP << SP << "alpaka::wait(queue);\n";
+            out << SP << SP << "std::vector<" << typeName << "> hostVec_" << fNBroadcastedA << "(" << length << ");\n";
+            out << SP << SP << "SOFIE::UTILITY::UnidirectionalBroadcast<" << typeName << ">(srcVec_" << fNA << ".data(), " << ConvertShapeToString(fShapeA) << ", " << ConvertShapeToString(fShapeY) << ", hostVec_" << fNBroadcastedA << ");\n";
+            out << SP << SP << "alpaka::memcpy(queue, deviceBuf_" << fNBroadcastedA << ", alpaka::createView(hostAcc, hostVec_" << fNBroadcastedA << "));\n";
+            out << SP << SP << "alpaka::wait(queue);\n";
+            out << SP << "}\n";
+        }
+        if (fShapeB != fShapeY) {
+            size_t lenB = ConvertShapeToLength(fShapeB);
+            out << SP << "{\n";
+            out << SP << SP << "std::vector<" << typeName << "> srcVec_" << fNB << "(" << lenB << ");\n";
+            out << SP << SP << "alpaka::memcpy(queue, alpaka::createView(hostAcc, srcVec_" << fNB << "), deviceBuf_" << fNB << ");\n";
+            out << SP << SP << "alpaka::wait(queue);\n";
+            out << SP << SP << "std::vector<" << typeName << "> hostVec_" << fNBroadcastedB << "(" << length << ");\n";
+            out << SP << SP << "SOFIE::UTILITY::UnidirectionalBroadcast<" << typeName << ">(srcVec_" << fNB << ".data(), " << ConvertShapeToString(fShapeB) << ", " << ConvertShapeToString(fShapeY) << ", hostVec_" << fNBroadcastedB << ");\n";
+            out << SP << SP << "alpaka::memcpy(queue, deviceBuf_" << fNBroadcastedB << ", alpaka::createView(hostAcc, hostVec_" << fNBroadcastedB << "));\n";
+            out << SP << SP << "alpaka::wait(queue);\n";
+            out << SP << "}\n";
+        }
+        if (fShapeC != fShapeY) {
+            size_t lenC = ConvertShapeToLength(fShapeC);
+            out << SP << "{\n";
+            out << SP << SP << "std::vector<std::uint8_t> srcVec_" << fNC << "(" << lenC << ");\n";
+            out << SP << SP << "alpaka::memcpy(queue, alpaka::createView(hostAcc, srcVec_" << fNC << "), deviceBuf_" << fNC << ");\n";
+            out << SP << SP << "alpaka::wait(queue);\n";
+            out << SP << SP << "std::vector<std::uint8_t> hostVec_" << fNBroadcastedC << "(" << length << ");\n";
+            out << SP << SP << "SOFIE::UTILITY::UnidirectionalBroadcast<std::uint8_t>(srcVec_" << fNC << ".data(), " << ConvertShapeToString(fShapeC) << ", " << ConvertShapeToString(fShapeY) << ", hostVec_" << fNBroadcastedC << ");\n";
+            out << SP << SP << "alpaka::memcpy(queue, deviceBuf_" << fNBroadcastedC << ", alpaka::createView(hostAcc, hostVec_" << fNBroadcastedC << "));\n";
+            out << SP << SP << "alpaka::wait(queue);\n";
+            out << SP << "}\n";
+        }
+
+        std::string nameA = fNBroadcastedA.empty() ? fNA : fNBroadcastedA;
+        std::string nameB = fNBroadcastedB.empty() ? fNB : fNBroadcastedB;
+        std::string nameC = fNBroadcastedC.empty() ? fNC : fNBroadcastedC;
+
+        out << SP << "auto const elementsPerThread_" << fNY << " = Vec::all(static_cast<Idx>(1));\n";
+        out << SP << "auto const elementsPerGrid_" << fNY << " = Vec::all(Idx{" << length << "});\n";
+        out << SP << "alpaka::KernelCfg<Acc> const kernelCfg_" << fNY << " = {elementsPerGrid_" << fNY << ", elementsPerThread_" << fNY << "};\n";
+        out << SP << "auto const workDiv_" << fNY << " = alpaka::getValidWorkDiv(kernelCfg_" << fNY << ", devAcc, whereKernel, "
+            << "alpaka::getPtrNative(deviceBuf_" << nameC << "), "
+            << "alpaka::getPtrNative(deviceBuf_" << nameA << "), "
+            << "alpaka::getPtrNative(deviceBuf_" << nameB << "), "
+            << "alpaka::getPtrNative(deviceBuf_" << fNY << "), "
+            << "static_cast<Idx>(" << length << "));\n";
+        out << SP << "alpaka::exec<Acc>(queue, workDiv_" << fNY << ", whereKernel, "
+            << "alpaka::getPtrNative(deviceBuf_" << nameC << "), "
+            << "alpaka::getPtrNative(deviceBuf_" << nameA << "), "
+            << "alpaka::getPtrNative(deviceBuf_" << nameB << "), "
+            << "alpaka::getPtrNative(deviceBuf_" << fNY << "), "
+            << "static_cast<Idx>(" << length << "));\n";
+        return out.str();
+    }
 };
 
 }//SOFIE
