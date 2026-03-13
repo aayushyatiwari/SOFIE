@@ -2,20 +2,15 @@
 
 This branch contains GPU operator implementations for the SOFIE alpaka backend.
 
-## AI use 
-I used Claude Sonnet 4.6 extensively to quickly understand the SOFIE standalone project structure and how code is written. 
-I take full responsibility for the code.
-I know the shallowness of code can be dangerous and so I vividly and intensely focused on the testing of operator methods.
 
 ## Exercise 3
 Some things and issues I found while building standalone SOFIE.
 
 1. When building SOFIE from source, I ran into a issue. I opened a PR for that. [PR #9](https://github.com/ML4EP/SOFIE/pull/9)
-2. While trying to implement alpaka methods for `ROperator_Softplus` I figured there was no `ParseSoftplus` file. I did write that file in the next exercise.
-3. Understood the architecture of SOFIE and how files are linked.
-4. Understood how operators are tested in the `SOFIE_core/test/` dir.
-5. Tried writing standalone alpaka kernels in `src/test_alapaka_kernels/` folder.
-6. Some Operators like selu and erf didn't have onnx files and .ref.hxx files so I wrote them myself.
+2. Understood the architecture of SOFIE and how files are linked.
+3. Understood how operators are tested in the `SOFIE_core/test/` dir.
+4. Tried writing standalone alpaka kernels in `src/test_alapaka_kernels/` folder.
+5. Some Operators like selu and erf didn't have onnx files and .ref.hxx files so I wrote them myself.
 
 Proceeded to write the operations.
 
@@ -130,7 +125,7 @@ Two fixes for intermediate BOOL tensors:
    skipped device allocation. Where requires the broadcasted condition tensor on
    device for the kernel.
 
-## Test
+# Testing
 
 Input shapes from `Where.onnx`:
 - `cond`: `[3, 1]` bool
@@ -149,6 +144,10 @@ output = [[1.0, 2.0], [30.0, 40.0], [1.0, 2.0]]
 Test added to `TestCustomModelsFromONNXForAlpakaCuda.cxx` as
 `SofieAlpakaTest.Where`. All 13 tests pass.
 
+## AI use 
+I used Claude Sonnet 4.6 extensively to quickly understand the SOFIE standalone project structure and how code is written. 
+I take full responsibility for the code.
+I know the shallowness of code can be dangerous and so I vividly and intensely focused on the testing of operator methods.
 
 Best
 Aayushya Tiwari
